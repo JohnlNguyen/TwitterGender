@@ -1,0 +1,273 @@
+---
+title: "STA 141A Final Project"
+author: |-
+  Siddhanth Sabharwal, 999229332
+  John Nguyen, 998808398
+date: "06/06/2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+###### Honor Code: The codes and results derived by using these codes constitute my own work. I have consulted the following resources regarding this assignment:
+
+###### None
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(rmarkdown)
+library(ggplot2)
+library(RTextTools)
+library(dplyr)
+library(naivebayes)
+library(maps)
+library(gridExtra)
+```
+
+### Introduction
+
+The data set chosen is a Twitter gender classification data set. The data set has information for 20,050 users across 26 variables. For these users the actual gender is given along with a probability level that the information is correct. Before training classification algorithms on this data, some data cleanup is required. First, all non-human users such as brands are removed. Second, users that can't be determined to be humans are removed. Third, any user where Twitter wasn't 100% confident about the gender was excluded so to not incorrectly train our algorithm. 
+
+#### Goals and Questions 
+For our project, we are trying to answer the following questions:
+
+1. How well do words in tweets and profiles predict user gender?
+2. What are the words that strongly predict male or female gender and what are the most popular words among them?
+3. How well do stylistic factors (like link color and sidebar color) predict user gender?
+4. How can we classify gender based on the user descriptions?
+
+#### Data
+Each row has a user name, a random tweet, account profile and image, location, and even link and sidebar color. The data Twitter User Gender Classification used for the project is available on Kaggle website. The data table includes 26 columns and 20,051 rows. Each row in the data represent a Twitter users, and the columns are are the data collected on the user. We also gather a data set of 100 common male and female names in the US to perform regular expression search on the username in order to deepen our classfication model for gender. The data is available on Social Security website.
+
+##### Where our data points are coming from. 
+
+```{r, echo = FALSE, include = TRUE}
+rawGenderData <- read.csv("gender-classifier-DFE-791531.csv",header=TRUE,fileEncoding="latin1",encoding = "UTF-8")
+GenderData <- subset(rawGenderData, ((gender == 'male' | gender == 'female') & gender.confidence == 1), select = c(X_unit_id, gender, created, description, fav_number, link_color, name, retweet_count, sidebar_color, text, tweet_coord, tweet_count, tweet_location, user_timezone))
+rm(rawGenderData)
+######get coordinates from data set
+coor = GenderData$tweet_coord
+coor_freq = table(coor)
+coor = names(coor_freq)
+coor = coor[coor!=""]
+######seperated latitudes and longtitudes
+coor = gsub("\\[","",coor)
+coor = gsub("\\]","",coor)
+coor = gsub(",","",coor)
+newcoor = strsplit(coor,split=" ")
+lat = NULL
+lon = NULL
+lat = sapply(1:length(newcoor), function(i) newcoor[[i]][1])
+lon = sapply(1:length(newcoor), function(i) newcoor[[i]][2])
+lon=as.numeric(lon) ####longtitude
+lat=as.numeric(lat) ####latitude
+######Plotting map
+map("world", fill=TRUE, col="lightgrey", bg="lightblue", ylim=c(-60, 90))
+points(lon,lat, col="red", pch=16)
+
+```
+
+<br>
+<b>The column labels are shown below:</b>
+```{r, echo = FALSE, include = TRUE}
+
+labels(GenderData)[[2]]
+
+```
+
+
+
+#### Methods 
+For classification of the gender data, we use kNN and Naive Bayes methods. We also use graphs and plots to visualize the data. Using text column, we also find the frequency of top common words used in tweets based on gender and perform a clustering by Hierarchical Clustering
+using complete linkage
+
+
+```{r, echo = FALSE, include = TRUE}
+##################################################
+## Cleaning the Data 
+##################################################
+
+clean.data <- function(txt){
+  txt <- gsub('\\s\\W',' ',txt)
+  txt <- gsub('\\W\\s',' ',txt)
+  txt <- gsub('\\s+',' ',txt)
+  txt <- strsplit(txt,split="\\s")
+  return(txt)
+}
+
+desc <- subset(GenderData, select =  c(X_unit_id ,description))
+desc$description <- tolower(desc$description)
+desc$description <- clean.data(desc$description)
+
+# Keywords we are looking for to identify gender 
+m.p <- c("boy", "he", "him", "father","husband","handsome","guy","dad",
+             "man","tough","son","brother","male")
+fe.p <- c("woman","wife","daugther","mom","mother","sister","female",
+          "beutiful","girl")
+
+get.freq <- function(txt,pattern){
+  freq <- sapply(1:length(pattern), function(i) sum(grepl(pattern[i],txt)), 
+                 simplify = TRUE)
+  return(freq)
+}
+
+male.freq <- get.freq(desc$description,m.p)
+female.freq <- get.freq(desc$description,fe.p)
+male.rows <- sapply(1:length(m.p), function(i) which(grepl(m.p[i],desc$description)), simplify = TRUE)
+female.rows <- sapply(1:length(fe.p), function(i) which(grepl(fe.p[i],desc$description)), simplify = TRUE)
+
+# Getting the male frequency in the description 
+male_id <- subset(GenderData,select = c(X_unit_id))
+male_id$freq <- c(0)
+t <- as.data.frame(table(unlist(male.rows)))
+male_id[ as.numeric(t$Var1),]$freq =  as.numeric(t$Freq)
+#male_id
+
+# Getting the female frequency in the description 
+female_id <- subset(GenderData,select = c(X_unit_id))
+female_id$freq <- c(0)
+female_t <- as.data.frame(table(unlist(female.rows)))
+female_id[ as.numeric(female_t$Var1),]$freq =  as.numeric(female_t$Freq)
+#female_id
+```
+
+### Gender Classification 
+##### Naive Bayes Classifer 
+
+
+### Most Commonly Used Words Among Genders 
+
+```{r, echo = FALSE, include = TRUE}
+txt <- GenderData$text
+txt <- unlist(clean.data(txt))
+tt <- table(txt)
+txt.table <- tt[order(tt, decreasing=T)]
+dfxy = data.frame(txt.table)
+prop = ggplot(dfxy[1:10,],aes(txt,Freq)) + geom_density() + ggtitle("Top 10 Words \n by both gender.") +   xlab("Word") + ylab("Frequency") + theme(text = element_text(size=10),
+        axis.text.x = element_text(angle=90, hjust=1)) 
+
+non.prop = ggplot(dfxy[60:70,],aes(txt,Freq)) + geom_density() + ggtitle("Top 10 Non-propositional Words \n by both gender.") +   xlab("Word") + ylab("Frequency") + theme(text = element_text(size=10),
+        axis.text.x = element_text(angle=90, hjust=1)) 
+```
+<br>
+Unsurprisingly the top 10 words are all propositional phrases. Therefore I took a step further to filter out these words in order to get a deeper learning about the sentiment on twitter. 
+
+```{r, echo = FALSE, include = TRUE}
+library(gridExtra)
+grid.arrange(prop,non.prop, ncol=2)
+```
+<br>
+
+```{r, echo = FALSE, include = TRUE}
+male.words <- GenderData[GenderData$gender == 'male',]$text
+txt <- unlist(clean.data(male.words))
+tt <- table(txt)
+txt.table <- tt[order(tt, decreasing=T)]
+dfxy = data.frame(txt.table)
+prop = ggplot(dfxy[1:10,],aes(txt,Freq)) + geom_density() + ggtitle("Top 10 Words \n by males") +   xlab("Word") + ylab("Frequency") + theme(text = element_text(size=10),
+        axis.text.x = element_text(angle=90, hjust=1)) 
+
+non.prop = ggplot(dfxy[70:80,],aes(txt,Freq)) + geom_density() + ggtitle("Top 10 Non-propositional Words \n by males") +   xlab("Word") + ylab("Frequency") + theme(text = element_text(size=10),
+        axis.text.x = element_text(angle=90, hjust=1)) 
+
+grid.arrange(prop,non.prop, ncol=2)
+```
+
+
+<br>
+
+```{r, echo = FALSE, include = TRUE}
+male.words <- GenderData[GenderData$gender == 'female',]$text
+txt <- unlist(clean.data(male.words))
+tt <- table(txt)
+txt.table <- tt[order(tt, decreasing=T)]
+dfxy = data.frame(txt.table)
+prop = ggplot(dfxy[1:10,],aes(txt,Freq)) + geom_density() + ggtitle("Top 10 Words \n by females") +   xlab("Word") + ylab("Frequency") + theme(text = element_text(size=10),
+        axis.text.x = element_text(angle=90, hjust=1)) 
+non.prop = ggplot(dfxy[40:50,],aes(txt,Freq)) + geom_density() + ggtitle("Top 10 non-propositional Words \n by females") +   xlab("Word") + ylab("Frequency") + theme(text = element_text(size=10),
+        axis.text.x = element_text(angle=90, hjust=1)) 
+grid.arrange(prop,non.prop, ncol=2)
+```
+
+##### These are the top 10 words that are said my males but not by females.
+```{r, echo = FALSE, include = TRUE}
+male.words <- GenderData[GenderData$gender == 'male',]$text
+male.words <- unlist(clean.data(male.words))
+male.tt <- table(male.words)
+male.table <- male.tt[order(male.tt, decreasing=T)]
+#male.table[1:11]
+
+female.words <- GenderData[GenderData$gender == 'female',]$text
+female.words <- unlist(clean.data(female.words))
+female.tt <- table(female.words)
+female.table <- female.tt[order(female.tt, decreasing=T)]
+diff.table <- setdiff(labels(male.table[1:1000])$male.words,labels(female.table[1:1000])$female.words)
+diff.table[1:10]
+```
+<br>
+As one can see, these more masculine words, for example *brothers* or *Bond* are more commonly used by males. *Bond* here is referring to the James Bond movies,generally more popular among males.  We can come to a generally conclusion that these words can help us identify a person's gender and that these are the words that strongly predict male or female gender.
+
+#### Stylistic factors In Predicting User Gender
+```{r, echo = FALSE, include = TRUE}
+colrs <- subset(GenderData, sidebar_color != 0 & link_color != 0, select=c(X_unit_id, gender,link_color,sidebar_color))
+link.df <- data.frame(link=colrs$link_color,gender=colrs$gender)
+side.df <- data.frame(link=colrs$sidebar_color,gender=colrs$gender)
+
+link.tt <- table(colrs$link_color,colrs$gender)
+link.df <- data.frame(link.tt)
+colnames(link.df) <- c("color","gender","Freq")
+male.link.df <- filter(link.df, gender == 'male' & Freq != 0)
+male.link.df <- male.link.df[ order(-male.link.df[,3]), ]
+
+p <-  ggplot(data=male.link.df[3:53,], aes(x=gender, y=Freq,fill=color)) + geom_bar(stat="identity", position=position_dodge())
+
+p = p + guides(fill=FALSE) + ggtitle("Top 50 Link Colors by Male ") +   xlab("Gender") + ylab("Frequency") + scale_fill_manual(values=male.link.df$color[3:53])
+
+female.link.df <- filter(link.df, gender == 'female' & Freq != 0)
+female.link.df <- female.link.df[ order(-female.link.df[,3]), ]
+q <-  ggplot(data=female.link.df[3:53,], aes(x=gender, y=Freq,fill=color)) + geom_bar(stat="identity", position=position_dodge())
+
+q = q + guides(fill=FALSE) + ggtitle("Top 50 Link Colors by Female ") +   xlab("Gender") + ylab("Frequency") + scale_fill_manual(values=female.link.df$color[3:53])
+grid.arrange(p,q, ncol=2)     
+```
+<br> 
+The subset of data we are interested for in this case refers to the link_color and side_bar color columns. For this reason, we extract this information and create data frames into tables using the ggplot function. These values are tabulated into a bar graph with a pictoral display of color by gender. We'll ignore the values for brand, and notice that 0084B4 is the most common color for females,as given by its hex value. For males, this hex value is 08C2C2. These hex values 0084B4, and 08C2C2 represent orange, and red, respectively. The hex vaue 0084B4 has the highest frequency. Females used this color nearly 2500 times for their link color, and it lead the other color choices by a considerable margin. The second occurrence of the most used color is the red, 08C2C2, by males which was used close to 500 times. Since there was such a large discrepancy and difference amongst usage of orange as by females, and by red for males as link profile colors, it can be assumed that link color of a profile can be particularly useful when it comes to predicting gender.   
+
+
+```{r, echo = FALSE, include = TRUE,warnings = FALSE,message=FALSE}
+
+side.tt <- table(colrs$side,colrs$gender)
+side.df <- data.frame(side.tt)
+colnames(side.df) <- c("color","gender","Freq")
+male.df <- filter(side.df, gender == 'male'  & Freq != 0)
+male.df <- male.df[ order(-male.df[,3]), ]
+
+female.df <- filter(side.df, gender == 'female'  & Freq != 0)
+female.df <- female.df[ order(-female.df[,3]), ]
+
+msp <-  ggplot(data=male.df[6:56,], aes(x=gender, y=Freq,fill=color)) + geom_bar(stat="identity", position=position_dodge()) +  scale_fill_manual(values=male.df$color[6:56])
+
+msp <- msp + guides(fill=FALSE) + ggtitle("Top 50 Side Colors by Male") +   xlab("Gender") + ylab("Frequency") + scale_fill_manual(values=side.df$color)
+
+fesp <-  ggplot(data=female.df[6:56,], aes(x=gender, y=Freq,fill=color)) + geom_bar(stat="identity", position=position_dodge()) +  scale_fill_manual(values=female.df$color[6:56])
+
+fesp <- fesp + guides(fill=FALSE) + ggtitle("Top 50 Side Colors by Female") +   xlab("Gender") + ylab("Frequency") + scale_fill_manual(values=side.df$color)
+grid.arrange(msp,fesp, ncol=2)  
+```
+<br>
+We perform a similar anlaysis with sidebar color as we did with link color. Again we use ggplot to generate a pictoral display of the various colors used for the sidebar, broken down by gender. At first glance, this distribution looks quite different, however it is still clear that there are preferred colors for each gender. The largest frequency in colors occurs from brands that tweeted, so we can ignore this. In general the highest frequency of color used amongst genders was considerably less than that of link color. The hex value 087FA7, corresponding to the color red, was the most commonly used color for the sidebar for both males and females. This color was used over 400 times amongst females and 500 amongst males. However, because this particular color was the most favorited amongst both genders, it would not give any meaningful insight when it comes to predicting gender. Although there are several predictors and various conditional probabilites, this would be a weak indicator of gender when considered solely on its own.  
+
+#### Conclusion
+Through an analysis of of the metrics of classification and identification for tweets, it was important to first predict, and then confirm which variables were meaningful in predicting gender. In our case, we limited our analysis to words, stylistic factors such as link color and profile sidebar color, as well as user descriptions.
+
+We ignored common propositional phrases which would, by default, be most common amongst the tweets and came to find that there were certain words and phrases which we deemed as more "masculine". Conversely, there were words that could be heavily attributed to females.The idea is that certain words and phrases may be linked to the collective gender's experiences. Common masculine words such "Bond" and "brother" reinforce this point. Because there was no overlap amongst common words and phrases said by males and females, if we are excluding propositional phrases, we conclude that we have some basis for predicting gender based on word choice.
+
+Another metric of evaluating tweets involved the overall stylistic and visual appearance. We came to find that link color and sidebar color were unrelated to each other as their distributions were entirely different based on gender. While orange was far and away the most common link color for females, males preferred red, but at a considerably lesser extent. While choice of these two colors for links could be indicative of gender, it is unclear whether any inferencs could be made based on gender for the other colors. The sidebar color distribution did not provide much information that could lead to a prediction for gender. Both males and females preferred red when it came to this sidebar color.
+
+#### Packages Used
+For our analysis, we use the R programming language including libraries: <b>ggplot2,dplyr,stringr, RTextTools, naivebayes, sets, data.table</b>
+
+#### References 
+1. 
+
+
